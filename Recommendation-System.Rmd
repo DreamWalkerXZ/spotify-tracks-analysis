@@ -137,7 +137,7 @@ recommend_songs <- function(track_id, data, original_df, top_n = 5) {
 
 ```{r}
 # 示例：推荐与特定 track_id 的歌曲相似的歌曲, 例如"4FOydQ5IdqmdeBgG9vFbPg"
-songs <- recommend_songs("4FOydQ5IdqmdeBgG9vFbPg", df_normalized, df, 10) # 替换 "specific_track_id" 为实际的 track_id
+songs <- recommend_songs("4FOydQ5IdqmdeBgG9vFbPg", df_normalized, df, 10)
 
 songs <- songs[order(songs$popularity, decreasing = TRUE), ]
 songs[, c('track_name', 'artists', 'album_name', 'popularity')]
