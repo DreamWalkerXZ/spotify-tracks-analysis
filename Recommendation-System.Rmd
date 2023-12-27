@@ -1,0 +1,145 @@
+---
+title: "Recommendation System"
+author: "DreamWalkerXZ"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 加载程序
+
+```{r}
+# 加载必要的库
+library(dplyr)
+library(caret)
+
+# 读取数据
+df <- read.csv("dataset.csv", header = TRUE, sep = ",")
+
+# 根据track_id进行去重
+df <- df %>% distinct(track_id, .keep_all = TRUE)
+
+# 将特定特征转换为因子（分类变量）
+df$time_signature <- as.factor(df$time_signature)
+df$mode <- as.factor(df$mode)
+df$key <- as.factor(df$key)
+df$explicit <- as.factor(df$explicit)
+
+# 为这些因子特征创建独热编码
+dummies <- dummyVars("~ time_signature + mode + key + explicit", data = df)
+df_transformed <- predict(dummies, newdata = df)
+
+# 将原始的数值特征与编码后的特征合并
+numerical_features <- df %>% select(duration_ms, danceability, energy, loudness, speechiness, acousticness, instrumentalness, liveness, valence, tempo)
+df_final <- cbind(numerical_features, df_transformed)
+
+# 标准化数值特征
+preProcValues <- preProcess(df_final, method = c("center", "scale"))
+df_normalized <- predict(preProcValues, df_final)
+
+# 应用权重到余弦相似度计算
+weighted_cosine_similarity <- function(vec1, vec2, weights) {
+  sum(weights * vec1 * vec2) / (sqrt(sum(weights * vec1^2)) * sqrt(sum(weights * vec2^2)))
+}
+
+# 根据权重计算相似度
+calculate_weighted_similarities <- function(index, data, weights) {
+  target <- data[index, , drop = FALSE]
+  sapply(1:nrow(data), function(i) weighted_cosine_similarity(target, data[i, , drop = FALSE], weights))
+}
+
+# 示例: 用户定义的权重向量
+user_defined_weights <- c(
+  duration_ms = 1,          
+  danceability = 2,         
+  energy = 2,               
+  loudness = 1,             
+  speechiness = 1,          
+  acousticness = 1,         
+  instrumentalness = 1,     
+  liveness = 1,             
+  valence = 2,              
+  tempo = 1,                
+  time_signature.0 = 1/5,   
+  time_signature.1 = 1/5,   
+  time_signature.3 = 1/5,   
+  time_signature.4 = 1/5,   
+  time_signature.5 = 1/5,   
+  mode.0 = 1/2,             
+  mode.1 = 1/2,             
+  key.0 = 1/12,             
+  key.1 = 1/12,             
+  key.2 = 1/12,             
+  key.3 = 1/12,             
+  key.4 = 1/12,             
+  key.5 = 1/12,             
+  key.6 = 1/12,             
+  key.7 = 1/12,             
+  key.8 = 1/12,             
+  key.9 = 1/12,             
+  key.10 = 1/12,            
+  key.11 = 1/12,            
+  explicit.False = 1/2,     
+  explicit.True = 1/2       
+)
+
+# 指定dummy variable的前缀
+dummy_prefixes <- c("time_signature", "mode", "key", "explicit") # 根据实际情况调整
+
+# 定义推荐函数
+recommend_songs <- function(track_id, data, original_df, top_n = 5) {
+  # 根据 track_id 找到对应的行索引
+  track_index <- which(original_df$track_id == track_id)
+  
+  # 如果没有找到对应的 track_id
+  if (length(track_index) == 0) {
+    return(data.frame())  # 返回空的数据框
+  }
+  
+  # 获取选定歌曲的类型
+  selected_genre <- original_df$track_genre[track_index]
+  
+  # 筛选出相同类型的歌曲
+  same_genre_indices <- which(original_df$track_genre == selected_genre)
+  filtered_data <- data[same_genre_indices, , drop = FALSE]
+  filtered_original_df <- original_df[same_genre_indices, ]
+  
+  # 更新选定歌曲的索引
+  updated_index <- match(track_index, same_genre_indices)
+  
+  # 根据用户定义的权重计算相似度
+  calculate_user_weighted_similarities <- function(index, data, user_weights) {
+    target <- data[index, , drop = FALSE]
+    # 创建完整的权重向量
+    full_weights <- rep(1, ncol(data))
+    names(full_weights) <- colnames(data)
+    full_weights[names(user_weights)] <- user_weights
+    
+    sapply(1:nrow(data), function(i) weighted_cosine_similarity(target, data[i, , drop = FALSE], full_weights))
+  }
+  
+  # 计算余弦相似度
+  similarities <- calculate_user_weighted_similarities(updated_index, filtered_data, user_defined_weights)
+  
+  # 获取最相似歌曲的索引
+  most_similar_indices <- order(similarities, decreasing = TRUE)[-1] # 排除自己
+  top_indices <- head(most_similar_indices, top_n)
+  
+  # 返回推荐歌曲的详细信息
+  return(filtered_original_df[top_indices, ])
+}
+```
+
+## 推荐歌曲
+
+```{r}
+# 示例：推荐与特定 track_id 的歌曲相似的歌曲, 例如"4FOydQ5IdqmdeBgG9vFbPg"
+songs <- recommend_songs("4FOydQ5IdqmdeBgG9vFbPg", df_normalized, df, 10) # 替换 "specific_track_id" 为实际的 track_id
+
+songs <- songs[order(songs$popularity, decreasing = TRUE), ]
+songs[, c('track_name', 'artists', 'album_name', 'popularity')]
+```
+
